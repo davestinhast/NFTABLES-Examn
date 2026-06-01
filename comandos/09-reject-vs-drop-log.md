@@ -1,64 +1,99 @@
-# REJECT vs DROP — y Logging
+# REJECT vs DROP y como registrar paquetes
 
-## DROP vs REJECT
+## La diferencia entre DROP y REJECT
 
-| Comando | Comportamiento | Efecto en el cliente |
-|---------|---------------|----------------------|
-| `drop`  | Descarta silenciosamente el paquete | El cliente espera timeout (lento) |
-| `reject` | Envía respuesta de rechazo activo | El cliente recibe error inmediato |
+Ambos bloquean el paquete, pero la diferencia esta en lo que le dicen al que envio el paquete.
 
-```bash
-# DROP silencioso (el cliente no sabe qué pasó)
-sudo nft add rule inet filter input tcp dport 23 drop
+| Comando | Que hace | Lo que siente el cliente |
+|---------|----------|--------------------------|
+| `drop` | Tira el paquete en silencio y no dice nada | El cliente espera hasta que el intento expira, puede tardar varios segundos |
+| `reject` | Bloquea el paquete pero manda un mensaje de error de vuelta | El cliente recibe el error de inmediato y sabe que fue rechazado |
 
-# REJECT con mensaje ICMP port-unreachable
-sudo nft add rule inet filter input tcp dport 23 reject with icmp type port-unreachable
+### Cuando usar cada uno
 
-# REJECT TCP con RST (más limpio para TCP)
-sudo nft add rule inet filter input tcp dport 23 reject with tcp reset
-
-# REJECT para IPv6
-sudo nft add rule inet6 filter input tcp dport 23 reject with icmpv6 type port-unreachable
-```
-
-> **¿Cuándo usar cuál?**
-> - `drop` → para atacantes (no revela información, fuerza timeout)
-> - `reject` → para servicios internos o cuando la UX importa
+- `drop` se usa contra atacantes o trafico no deseado. El silencio hace que no sepan si el puerto existe.
+- `reject` se usa cuando hay servicios internos y se quiere que el error aparezca rapido.
 
 ---
 
-## Logging de paquetes
+## Comandos DROP
 
 ```bash
-# Log básico antes de una regla
-sudo nft add rule inet filter input ip saddr 10.0.0.5 log drop
-
-# Log con prefijo descriptivo
-sudo nft add rule inet filter input tcp dport 22 log prefix "SSH-INTENTO: " level info accept
-
-# Log de paquetes dropeados (política final)
-sudo nft add rule inet filter input log prefix "DROPPED: " level warn drop
-
-# Log con contador de bytes/paquetes
-sudo nft add rule inet filter input tcp dport 80 counter log prefix "HTTP: " accept
+# Bloquear silenciosamente todo lo que llegue al puerto 23 (telnet)
+sudo nft add rule inet filter input tcp dport 23 drop
 ```
 
-### Niveles de log disponibles
+---
 
-| Nivel | Uso |
-|-------|-----|
-| `emerg` | Sistema inutilizable |
-| `alert` | Acción inmediata requerida |
-| `crit` | Condición crítica |
-| `err` | Error |
-| `warn` | Advertencia |
-| `notice` | Condición normal pero significativa |
-| `info` | Informativo |
-| `debug` | Debug |
+## Comandos REJECT
 
 ```bash
-# Ver logs generados
-sudo journalctl -k | grep "SSH-INTENTO"
-# o
-sudo dmesg | grep "DROPPED"
+# Rechazar con mensaje ICMP de puerto no disponible
+sudo nft add rule inet filter input tcp dport 23 reject with icmp type port-unreachable
+
+# Rechazar con un reset TCP (mas limpio para conexiones TCP)
+sudo nft add rule inet filter input tcp dport 23 reject with tcp reset
+
+# Rechazar en IPv6 con mensaje ICMPv6
+sudo nft add rule inet6 filter input tcp dport 23 reject with icmpv6 type port-unreachable
+```
+
+---
+
+## Como registrar paquetes (logging)
+
+El logging guarda informacion de los paquetes en el log del sistema.
+Sirve para ver que esta siendo bloqueado y para diagnosticar problemas.
+
+### Registrar y despues bloquear
+
+```bash
+sudo nft add rule inet filter input ip saddr 10.0.0.5 log drop
+```
+
+Primero escribe en el log que llego un paquete de esa IP y luego lo descarta.
+
+### Registrar con un texto para identificarlo facil
+
+```bash
+sudo nft add rule inet filter input tcp dport 22 log prefix "SSH-INTENTO: " level info accept
+```
+
+`prefix` agrega un texto al inicio de cada linea del log para que sea facil buscarla.
+Cuando alguien se conecte por SSH va a aparecer una linea con "SSH-INTENTO:" en el log.
+
+### Registrar todo lo que se esta bloqueando
+
+```bash
+sudo nft add rule inet filter input log prefix "BLOQUEADO: " level warn drop
+```
+
+Esta regla va al final de la cadena. Cualquier paquete que llego hasta aca
+y no fue aceptado por ninguna regla anterior queda registrado y luego se descarta.
+
+---
+
+## Niveles de log disponibles
+
+| Nivel | Para que se usa |
+|-------|-----------------|
+| `debug` | Para pruebas y desarrollo, muy detallado |
+| `info` | Informacion general, eventos normales |
+| `notice` | Algo que vale la pena saber pero no es un problema |
+| `warn` | Algo que puede ser un problema |
+| `err` | Error |
+| `crit` | Error critico |
+| `alert` | Hay que actuar ahora |
+| `emerg` | El sistema esta inutilizable |
+
+---
+
+## Como ver los logs generados
+
+```bash
+# Ver logs del kernel que incluyan el prefijo configurado
+sudo journalctl -k | grep "BLOQUEADO"
+
+# O con dmesg
+sudo dmesg | grep "BLOQUEADO"
 ```

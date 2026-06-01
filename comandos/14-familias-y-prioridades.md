@@ -1,87 +1,98 @@
-# Familias de Dirección y Prioridades de Cadena
+# Familias, hooks y prioridades
 
-## Familias disponibles en nftables
+## Familias de direccion
 
-| Familia | Descripción |
-|---------|-------------|
-| `ip` | Paquetes IPv4 |
-| `ip6` | Paquetes IPv6 |
-| `inet` | IPv4 + IPv6 (recomendado para la mayoría de casos) |
-| `arp` | Paquetes ARP |
-| `bridge` | Paquetes que atraviesan un bridge |
-| `netdev` | Ingress/egress de interfaz específica |
+Cuando se crea una tabla hay que indicar con que tipo de trafico va a trabajar.
+Eso se hace con la familia.
+
+| Familia | Para que sirve |
+|---------|----------------|
+| `ip` | Solo paquetes IPv4 |
+| `ip6` | Solo paquetes IPv6 |
+| `inet` | IPv4 e IPv6 al mismo tiempo. El mas usado para firewalls |
+| `arp` | Paquetes ARP (resolucion de direcciones MAC) |
+| `bridge` | Paquetes que pasan por un bridge de red |
+| `netdev` | Paquetes al momento de entrar o salir de una interfaz especifica |
 
 ```bash
-# Tabla ip (solo IPv4)
-sudo nft add table ip mi_tabla
-
-# Tabla inet (ambos)
+# Tabla para IPv4 e IPv6 (la mas comun)
 sudo nft add table inet mi_tabla
 
-# Tabla para bridge
+# Tabla solo para IPv4
+sudo nft add table ip mi_tabla
+
+# Tabla para trafico de bridge
 sudo nft add table bridge mi_tabla
 ```
 
 ---
 
-## Tipos de cadena (type)
+## Tipos de cadena
 
-| Tipo | Uso |
-|------|-----|
-| `filter` | Filtrado de paquetes (accept/drop) |
-| `nat` | Traducción de direcciones |
-| `route` | Modificar enrutamiento |
+Cuando se crea una cadena hay que indicar para que se va a usar.
+
+| Tipo | Para que sirve |
+|------|----------------|
+| `filter` | Para permitir o bloquear paquetes |
+| `nat` | Para traduccion de direcciones (DNAT, SNAT, masquerade) |
+| `route` | Para modificar como se enrutan los paquetes |
 
 ---
 
-## Hooks disponibles
+## Hooks - en que momento se ejecuta la cadena
 
-| Hook | Cuándo se ejecuta |
+El hook indica en que punto del procesamiento de red se activa la cadena.
+
+| Hook | Cuando se ejecuta |
 |------|-------------------|
-| `prerouting` | Antes de la decisión de enrutamiento |
-| `input` | Paquetes destinados al sistema local |
-| `forward` | Paquetes que atraviesan el sistema |
-| `output` | Paquetes generados localmente |
-| `postrouting` | Después de la decisión de enrutamiento |
-| `ingress` | Al llegar a la interfaz (familia netdev) |
+| `prerouting` | Justo cuando el paquete llega, antes de decidir a donde va |
+| `input` | Cuando el paquete va destinado al propio equipo |
+| `forward` | Cuando el paquete va a pasar por el equipo hacia otro destino |
+| `output` | Cuando el paquete fue generado por el propio equipo y esta saliendo |
+| `postrouting` | Justo antes de que el paquete salga por la interfaz de red |
+| `ingress` | Al entrar por una interfaz especifica (solo familia netdev) |
 
 ---
 
-## Prioridades de cadena
+## Prioridades
 
-Número **menor** = se ejecuta **antes**. Puede ser negativo.
+La prioridad decide el orden en que se ejecutan las cadenas cuando hay varias
+conectadas al mismo hook. Un numero mas bajo se ejecuta primero.
 
-| Nombre estándar | Valor | Uso típico |
-|-----------------|-------|-----------|
-| `raw` | -300 | Antes de conntrack |
-| `mangle` | -150 | Modificar campos de paquetes |
-| `dstnat` | -100 | DNAT / prerouting NAT |
-| `filter` | 0 | Filtrado estándar |
-| `security` | 50 | Políticas SELinux/AppArmor |
-| `srcnat` | 100 | SNAT / postrouting NAT |
+| Nombre estandar | Numero | Cuando se usa |
+|-----------------|--------|---------------|
+| `raw` | -300 | Antes de que conntrack registre el paquete |
+| `mangle` | -150 | Para modificar campos de los paquetes |
+| `dstnat` | -100 | Para DNAT en prerouting |
+| `filter` | 0 | Filtrado normal, el mas comun |
+| `security` | 50 | Politicas de seguridad del sistema |
+| `srcnat` | 100 | Para SNAT y masquerade en postrouting |
 
 ```bash
-# Usando nombre estándar
+# Usando el nombre estandar (mas legible)
 sudo nft add chain inet filter input '{ type filter hook input priority filter; }'
 
-# Usando número directamente
+# Usando el numero directamente
 sudo nft add chain inet filter input '{ type filter hook input priority 0; }'
 
-# NAT prerouting (debe ser antes del filtrado)
+# Cadena de NAT que debe ejecutarse antes del filtrado
 sudo nft add chain ip nat prerouting '{ type nat hook prerouting priority dstnat; }'
 ```
 
 ---
 
-## Política predeterminada de cadena
+## Politica de cadena
+
+La politica define que pasa con un paquete que llego al final de la cadena
+sin que ninguna regla lo haya procesado.
 
 ```bash
-# Policy ACCEPT (permite todo lo no especificado)
+# Policy accept - si nada coincide, se deja pasar (menos seguro)
 sudo nft add chain inet filter input '{ type filter hook input priority 0; policy accept; }'
 
-# Policy DROP (bloquea todo lo no especificado — más seguro)
+# Policy drop - si nada coincide, se bloquea (mas seguro)
 sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }'
 
-# Cambiar política de cadena existente
+# Cambiar la politica de una cadena que ya existe
 sudo nft chain inet filter input '{ policy drop; }'
 ```

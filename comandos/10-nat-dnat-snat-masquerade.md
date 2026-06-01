@@ -1,78 +1,96 @@
-# NAT — DNAT, SNAT y Masquerade
+# NAT - DNAT, SNAT y Masquerade
 
-## Estructura de NAT en nftables
+## Que es NAT
 
-NAT requiere su propia tabla (`ip nat`) con cadenas especiales de tipo `nat`.
+NAT significa traduccion de direcciones de red. Se usa para cambiar la IP de origen
+o de destino de los paquetes. Es lo que permite que varios equipos de una red interna
+compartan una sola IP publica para salir a internet.
+
+NAT necesita su propia tabla separada del filtrado.
+
+---
+
+## Paso 1 - Crear la tabla y las cadenas de NAT
 
 ```bash
-# Crear tabla NAT
+# Crear la tabla NAT (solo IPv4)
 sudo nft add table ip nat
 
-# Crear cadena PREROUTING (para DNAT — antes de enrutamiento)
+# Crear la cadena PREROUTING para DNAT
+# Se ejecuta antes de que el sistema decida a donde va el paquete
 sudo nft add chain ip nat prerouting '{ type nat hook prerouting priority -100; }'
 
-# Crear cadena POSTROUTING (para SNAT/Masquerade — después de enrutamiento)
+# Crear la cadena POSTROUTING para SNAT y masquerade
+# Se ejecuta despues de que el sistema decide la ruta del paquete
 sudo nft add chain ip nat postrouting '{ type nat hook postrouting priority 100; }'
 ```
 
 ---
 
-## DNAT — Destination NAT (Port Forwarding)
+## DNAT - Redirigir trafico entrante a otro equipo
 
-Redirige tráfico entrante a otra IP/puerto (útil para exponer servicios internos).
+DNAT cambia la IP de destino de un paquete. Se usa para redirigir trafico
+que llega al servidor hacia otro equipo dentro de la red interna.
 
 ```bash
-# Redirigir puerto 80 externo al servidor interno 192.168.1.10:80
+# Redirigir todo lo que llegue al puerto 80 hacia el servidor interno 192.168.1.10
 sudo nft add rule ip nat prerouting tcp dport 80 dnat to 192.168.1.10
 
-# Redirigir con cambio de puerto (80 externo → 8080 interno)
+# Redirigir el puerto 80 externo al puerto 8080 del servidor interno
 sudo nft add rule ip nat prerouting tcp dport 80 dnat to 192.168.1.10:8080
 
-# DNAT solo para tráfico que entra por eth0
+# Redirigir solo el trafico que entra por la interfaz eth0
 sudo nft add rule ip nat prerouting iif eth0 tcp dport 443 dnat to 192.168.1.20:443
 ```
 
 ---
 
-## SNAT — Source NAT
+## SNAT - Cambiar la IP de origen de los paquetes salientes
 
-Cambia la IP de origen de los paquetes salientes (IP estática conocida).
+SNAT cambia la IP de origen. Se usa cuando se conoce la IP publica fija del servidor.
 
 ```bash
-# SNAT: cambiar IP origen a 203.0.113.5 para tráfico saliente por eth0
+# Todo lo que salga por eth0 va a aparecer como si viniera de 203.0.113.5
 sudo nft add rule ip nat postrouting oif eth0 snat to 203.0.113.5
 
-# SNAT para red interna específica
+# SNAT solo para la red interna 192.168.1.0/24
 sudo nft add rule ip nat postrouting ip saddr 192.168.1.0/24 oif eth0 snat to 203.0.113.5
 ```
 
 ---
 
-## Masquerade (SNAT dinámico)
+## Masquerade - SNAT automatico cuando la IP publica cambia
 
-Igual que SNAT pero usa automáticamente la IP de la interfaz de salida (ideal para IPs dinámicas / DHCP).
+Masquerade hace lo mismo que SNAT pero no necesita saber la IP de antemano.
+Lee la IP actual de la interfaz de salida y la usa automaticamente.
+Es el que se usa en casas o cuando la IP publica es dinamica (DHCP).
 
 ```bash
-# Masquerade para toda la red interna
+# Todo lo que salga por eth0 va a usar la IP actual de eth0 como origen
 sudo nft add rule ip nat postrouting oif eth0 masquerade
 
-# Masquerade solo para subred específica
+# Masquerade solo para una red interna especifica
 sudo nft add rule ip nat postrouting ip saddr 192.168.0.0/24 oif eth0 masquerade
 ```
 
-> **SNAT vs Masquerade:**
-> - `snat to X.X.X.X` → IP fija conocida (servidores con IP estática)
-> - `masquerade` → IP dinámica (conexiones domésticas, DHCP)
+### Diferencia rapida entre SNAT y Masquerade
+
+| | SNAT | Masquerade |
+|--|------|------------|
+| IP publica | Fija, se escribe en el comando | Dinamica, la lee de la interfaz |
+| Cuando usarlo | Servidores con IP estatica | Conexiones de casa o IP que cambia |
 
 ---
 
-## Habilitar IP Forwarding (necesario para NAT)
+## Activar IP forwarding (necesario para que NAT funcione)
+
+Sin esto el sistema no va a reenviar paquetes entre interfaces y NAT no va a funcionar.
 
 ```bash
-# Temporal
+# Activarlo ahora mismo (se pierde al reiniciar)
 sudo sysctl -w net.ipv4.ip_forward=1
 
-# Permanente
+# Activarlo de forma permanente
 echo "net.ipv4.ip_forward = 1" | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
 ```

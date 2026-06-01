@@ -1,117 +1,130 @@
-# Ruleset Completo — Ejemplo de Servidor
+# Ejemplo de configuracion completa
 
-> Este es un ejemplo de configuración completa y funcional para un servidor Linux con nftables. Cubre todos los conceptos del examen en un solo archivo.
+Este es un ejemplo real y funcional de como se veria un servidor configurado
+con nftables cubriendo todos los casos importantes. Esta escrito en formato
+de archivo para guardar en /etc/nftables.conf.
 
-## Configuración como archivo /etc/nftables.conf
+---
+
+## Configuracion completa como archivo
 
 ```bash
 #!/usr/sbin/nft -f
 
-# Limpiar todo antes de aplicar
+# Borrar todo lo que haya antes para empezar desde cero
 flush ruleset
 
 # ============================================================
-# TABLA PRINCIPAL DE FILTRADO (IPv4 + IPv6)
+# TABLA DE FILTRADO - cubre IPv4 e IPv6
 # ============================================================
 table inet filter {
 
-    # --- Blacklist de IPs bloqueadas ---
+    # Lista negra de IPs bloqueadas
+    # Se pueden agregar IPs o rangos completos
     set blacklist {
         type ipv4_addr
         flags interval
         elements = { 10.0.0.5, 192.168.50.0/24 }
     }
 
-    # --- Cadena INPUT ---
+    # Cadena que maneja el trafico entrante
     chain input {
         type filter hook input priority filter; policy drop;
 
-        # Loopback siempre permitido
+        # El loopback siempre debe estar permitido
         iif lo accept
 
-        # Conntrack: permitir tráfico de conexiones establecidas
+        # Permitir trafico de conexiones que ya estaban abiertas
+        # Sin esta regla las respuestas del servidor quedarian bloqueadas
         ct state established,related accept
 
-        # Conntrack: tirar paquetes inválidos
+        # Tirar paquetes mal formados o invalidos
         ct state invalid drop
 
-        # Blacklist
+        # Bloquear todo lo que este en la lista negra
         ip saddr @blacklist drop
 
-        # ICMP (ping) permitido
+        # Permitir ping
         icmp type echo-request accept
 
-        # ICMPv6 necesario para IPv6
+        # Permitir los mensajes ICMPv6 que IPv6 necesita para funcionar
         icmpv6 type { echo-request, nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept
 
-        # SSH con rate limiting anti-bruteforce
+        # Permitir SSH con limite de 5 intentos por minuto
         tcp dport 22 ct state new limit rate 5/minute accept
 
-        # Web
+        # Permitir trafico web
         tcp dport { 80, 443 } ct state new accept
 
-        # Log y drop del resto
+        # Registrar y bloquear todo lo que llegue hasta aca sin ser aceptado
         log prefix "INPUT-DROP: " level warn drop
     }
 
-    # --- Cadena OUTPUT ---
+    # Cadena para el trafico saliente
     chain output {
         type filter hook output priority filter; policy accept;
 
-        # Permitir todo saliente (política accept)
-        # Agregar restricciones aquí si se necesitan
+        # Con policy accept todo lo que salga esta permitido por defecto
+        # Si se quiere restringir la salida se puede cambiar a policy drop
+        # y agregar reglas especificas aqui
     }
 
-    # --- Cadena FORWARD ---
+    # Cadena para trafico que pasa por el equipo (para cuando actua de router)
     chain forward {
         type filter hook forward priority filter; policy drop;
 
-        # Permitir forwarding de conexiones establecidas
+        # Permitir conexiones activas que estan pasando por el equipo
         ct state established,related accept
 
-        # Permitir de red interna hacia internet
+        # Permitir trafico desde la red interna (eth1) hacia internet (eth0)
         iif eth1 oif eth0 ct state new accept
 
+        # Registrar y bloquear el resto
         log prefix "FORWARD-DROP: " level warn drop
     }
 }
 
 # ============================================================
-# TABLA NAT
+# TABLA NAT - solo IPv4
 # ============================================================
 table ip nat {
 
     chain prerouting {
         type nat hook prerouting priority dstnat;
 
-        # Port forwarding: puerto 80 externo → servidor interno
+        # Redirigir el puerto 80 que llega por eth0 al servidor interno
         iif eth0 tcp dport 80 dnat to 192.168.1.10:80
     }
 
     chain postrouting {
         type nat hook postrouting priority srcnat;
 
-        # Masquerade para toda la red interna
+        # Compartir la IP de eth0 con toda la red interna
         ip saddr 192.168.0.0/24 oif eth0 masquerade
     }
 }
 ```
 
-## Aplicar este archivo
+---
+
+## Como aplicar esta configuracion
 
 ```bash
+# Guardar el contenido de arriba en el archivo de configuracion
+sudo nano /etc/nftables.conf
+
+# Aplicarlo
 sudo nft -f /etc/nftables.conf
-```
 
-## Verificar que se aplicó correctamente
-
-```bash
+# Verificar que se cargo correctamente
 sudo nft list ruleset
 ```
 
 ---
 
-## Configuración mínima para servidor web (solo lo esencial)
+## Configuracion minima para un servidor web
+
+Para quien solo necesita lo basico sin NAT ni forward:
 
 ```bash
 sudo nft flush ruleset
@@ -124,25 +137,26 @@ sudo nft add rule inet filter input tcp dport 22 limit rate 5/minute accept
 sudo nft add rule inet filter input tcp dport { 80, 443 } accept
 sudo nft add rule inet filter input icmp type echo-request accept
 sudo nft list ruleset > /etc/nftables.conf
+sudo systemctl enable nftables
 ```
 
 ---
 
-## Diagnóstico rápido
+## Comandos para revisar que todo funciona
 
 ```bash
-# ¿Hay reglas activas?
+# Ver todas las reglas activas
 sudo nft list ruleset
 
-# ¿Qué bloquea X conexión?
-sudo nft monitor  # ver en tiempo real
+# Ver que esta siendo bloqueado en tiempo real
+sudo nft monitor
 
-# Ver logs del firewall
+# Buscar en los logs lo que fue bloqueado
 sudo journalctl -k | grep "INPUT-DROP"
 
-# Probar que SSH funciona
-ssh -v usuario@ip_servidor
+# Probar que SSH responde
+ssh -v usuario@ip_del_servidor
 
-# Probar que HTTP responde
-curl -I http://ip_servidor
+# Probar que el servidor web responde
+curl -I http://ip_del_servidor
 ```

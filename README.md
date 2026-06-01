@@ -1,138 +1,146 @@
-# 🔥 NFTABLES — Guía Completa para Examen
+# NFTABLES - Guia de Comandos para Examen
 
-Referencia de todos los comandos **nftables** organizados por categoría. Incluye lo básico y todo lo que suele aparecer por sorpresa en exámenes.
+Esta guia tiene todos los comandos de nftables organizados por tema.
+Cada archivo explica que hace cada comando y para que sirve.
 
 ---
 
-## 📋 Índice
+## Indice
 
-### Fundamentos
-1. [Instalación y Gestión del Servicio](./comandos/01-instalacion.md)
-2. [Operaciones Básicas — list, flush, delete](./comandos/02-operaciones-basicas.md)
-3. [Tablas y Cadenas](./comandos/03-tablas-y-cadenas.md)
+### Lo basico
+1. [Instalacion y manejo del servicio](./comandos/01-instalacion.md)
+2. [Ver, borrar y editar reglas](./comandos/02-operaciones-basicas.md)
+3. [Tablas y cadenas](./comandos/03-tablas-y-cadenas.md)
 
-### Reglas y Firewall
-4. [Reglas de Firewall — SSH, HTTP, IP, ping](./comandos/04-reglas-firewall.md)
-5. [Stateful Firewall — Conntrack ct state ⭐](./comandos/07-stateful-conntrack.md)
+### Reglas de firewall
+4. [Reglas comunes - SSH, HTTP, bloquear IPs, ping](./comandos/04-reglas-firewall.md)
+5. [Firewall con seguimiento de conexiones - conntrack](./comandos/07-stateful-conntrack.md)
 6. [Cadenas OUTPUT y FORWARD](./comandos/08-cadenas-output-forward.md)
-7. [REJECT vs DROP y Logging](./comandos/09-reject-vs-drop-log.md)
-8. [Múltiples Puertos, Rangos y CIDRs](./comandos/11-puertos-multiples-rangos-cidr.md)
+7. [REJECT vs DROP y como registrar paquetes](./comandos/09-reject-vs-drop-log.md)
+8. [Varios puertos, rangos y bloques de IPs](./comandos/11-puertos-multiples-rangos-cidr.md)
 
-### Sets y Listas
-9. [Sets y Blacklist de IPs](./comandos/05-sets-blacklist.md)
+### Listas de IPs
+9. [Sets y lista negra de IPs](./comandos/05-sets-blacklist.md)
 
 ### NAT
-10. [NAT — DNAT, SNAT, Masquerade ⭐](./comandos/10-nat-dnat-snat-masquerade.md)
+10. [NAT - DNAT, SNAT y Masquerade](./comandos/10-nat-dnat-snat-masquerade.md)
 
 ### IPv6
 11. [IPv6 con nftables](./comandos/12-ipv6.md)
 
-### Monitorización y Teoría
-12. [Contadores y Monitorización](./comandos/13-contadores-monitorizacion.md)
-13. [Familias, Hooks y Prioridades](./comandos/14-familias-y-prioridades.md)
+### Ver que pasa y teoria
+12. [Contadores y monitoreo](./comandos/13-contadores-monitorizacion.md)
+13. [Familias, hooks y prioridades](./comandos/14-familias-y-prioridades.md)
 
-### Persistencia y Ejemplos
-14. [Guardar Configuración](./comandos/06-persistencia.md)
-15. [Ruleset Completo de Ejemplo ⭐](./comandos/15-ruleset-completo-ejemplo.md)
-
-> ⭐ = especialmente importante para examen
+### Guardar y ejemplos
+14. [Guardar la configuracion](./comandos/06-persistencia.md)
+15. [Ejemplo de configuracion completa](./comandos/15-ruleset-completo-ejemplo.md)
 
 ---
 
-## ⚡ Comandos de Supervivencia (memorizar estos)
+## Comandos que hay que saber si o si
 
 ```bash
-# Ver todo
+# Ver todas las reglas que estan activas ahora mismo
 sudo nft list ruleset
 
-# Ver con handles para poder borrar
+# Ver las reglas con su numero (handle), necesario para borrar una en especifico
 sudo nft --handle list ruleset
 
-# Borrar todo
+# Borrar todas las reglas de un golpe
 sudo nft flush ruleset
 
-# Borrar regla específica
+# Borrar una regla en especifico usando su numero
 sudo nft delete rule inet filter input handle <N>
 
-# Guardar permanente
+# Guardar las reglas para que no se pierdan al reiniciar
 sudo nft list ruleset > /etc/nftables.conf
 
-# Aplicar desde archivo
+# Aplicar un archivo de configuracion
 sudo nft -f /etc/nftables.conf
 
-# Monitoreo en tiempo real
+# Ver en tiempo real que paquetes estan siendo procesados
 sudo nft monitor
 ```
 
 ---
 
-## 🗺️ Flujo Completo — Servidor Seguro
+## Como armar un firewall basico paso a paso
 
 ```bash
-# 1. Limpiar
+# Paso 1 - Borrar todo lo que haya antes para empezar limpio
 sudo nft flush ruleset
 
-# 2. Tabla
+# Paso 2 - Crear la tabla principal donde van a vivir las reglas
 sudo nft add table inet filter
 
-# 3. Cadena INPUT con DROP
+# Paso 3 - Crear la cadena INPUT con politica DROP
+# Esto significa que todo lo que llegue y no tenga una regla que lo permita, se bloquea
 sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }'
 
-# 4. Loopback
+# Paso 4 - Permitir el trafico interno del propio sistema (loopback)
+# Sin esto muchas cosas del sistema dejan de funcionar
 sudo nft add rule inet filter input iif lo accept
 
-# 5. Conntrack (CRÍTICO — permite tráfico de retorno)
+# Paso 5 - Permitir el trafico de conexiones que ya estaban abiertas
+# Esto es importante porque sin esta regla las respuestas del servidor tambien se bloquean
 sudo nft add rule inet filter input ct state established,related accept
+
+# Paso 6 - Tirar los paquetes que no tienen sentido o estan mal formados
 sudo nft add rule inet filter input ct state invalid drop
 
-# 6. Servicios
+# Paso 7 - Permitir SSH con limite de intentos para evitar ataques
 sudo nft add rule inet filter input tcp dport 22 limit rate 5/minute accept
+
+# Paso 8 - Permitir trafico web
 sudo nft add rule inet filter input tcp dport { 80, 443 } accept
+
+# Paso 9 - Permitir ping
 sudo nft add rule inet filter input icmp type echo-request accept
 
-# 7. Guardar
+# Paso 10 - Guardar todo para que sobreviva a un reinicio
 sudo nft list ruleset > /etc/nftables.conf
 sudo systemctl enable nftables
 ```
 
 ---
 
-## 📊 Tabla Resumen — Conceptos Clave
+## Tabla resumen - lo que cae en examenes
 
-| Concepto | Comando clave |
-|----------|---------------|
+| Concepto | Comando |
+|----------|---------|
 | Ver reglas | `nft list ruleset` |
 | Borrar todo | `nft flush ruleset` |
-| Política DROP | `policy drop;` en la cadena |
-| Conntrack retorno | `ct state established,related accept` |
-| Rate limiting | `limit rate 5/minute` |
-| REJECT activo | `reject with icmp type port-unreachable` |
-| Port forwarding | `dnat to IP:puerto` |
-| Masquerade | `masquerade` en postrouting |
-| Blacklist dinámica | `set blacklist { type ipv4_addr; }` |
-| Log paquetes | `log prefix "TAG: " level warn` |
-| Ver handles | `nft --handle list ruleset` |
+| Bloquear por defecto | `policy drop;` en la cadena |
+| Permitir respuestas | `ct state established,related accept` |
+| Limitar intentos | `limit rate 5/minute` |
+| Rechazar con aviso | `reject with icmp type port-unreachable` |
+| Redirigir puertos | `dnat to IP:puerto` |
+| Compartir internet | `masquerade` en postrouting |
+| Lista negra de IPs | `set blacklist { type ipv4_addr; }` |
+| Registrar paquetes | `log prefix "TAG: " level warn` |
+| Ver numeros de regla | `nft --handle list ruleset` |
 
 ---
 
-## 🔑 Familias de Dirección
+## Familias de direccion
 
-| Familia | Cubre |
-|---------|-------|
+| Familia | Para que sirve |
+|---------|----------------|
 | `ip` | Solo IPv4 |
 | `ip6` | Solo IPv6 |
-| `inet` | IPv4 + IPv6 juntos ✅ |
+| `inet` | IPv4 e IPv6 al mismo tiempo, el mas usado |
 | `arp` | Paquetes ARP |
-| `bridge` | Tráfico de bridge |
+| `bridge` | Trafico que pasa por un bridge |
 
 ---
 
-## 🪝 Hooks y Prioridades
+## Hooks y en que momento se ejecutan
 
-| Hook | Cuándo | Prioridad típica |
-|------|--------|-----------------|
-| `prerouting` | Antes de enrutar | -100 (DNAT) |
-| `input` | Hacia el sistema | 0 (filter) |
-| `forward` | Atraviesa el sistema | 0 (filter) |
-| `output` | Desde el sistema | 0 (filter) |
-| `postrouting` | Después de enrutar | 100 (SNAT) |
+| Hook | Cuando se ejecuta | Prioridad normal |
+|------|-------------------|-----------------|
+| `prerouting` | Antes de decidir hacia donde va el paquete | -100 para DNAT |
+| `input` | Paquetes que van al propio equipo | 0 |
+| `forward` | Paquetes que pasan por el equipo hacia otro lado | 0 |
+| `output` | Paquetes que salen del propio equipo | 0 |
+| `postrouting` | Despues de decidir la ruta del paquete | 100 para SNAT |
