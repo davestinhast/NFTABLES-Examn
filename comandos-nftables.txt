@@ -1,0 +1,401 @@
+================================================================
+NFTABLES - TODOS LOS COMANDOS
+================================================================
+
+
+----------------------------------------------------------------
+INSTALACION Y SERVICIO
+----------------------------------------------------------------
+
+Ver si nftables esta instalado:
+    nft -version
+
+Instalar nftables:
+    sudo apt update
+    sudo apt install nftables
+
+Iniciar el servicio:
+    sudo systemctl start nftables
+
+Habilitar para que arranque con el sistema:
+    sudo systemctl enable nftables
+
+Ver si el servicio esta corriendo:
+    sudo systemctl status nftables
+
+Reiniciar el servicio:
+    sudo systemctl restart nftables
+
+
+----------------------------------------------------------------
+VER Y BORRAR REGLAS
+----------------------------------------------------------------
+
+Ver todas las reglas activas:
+    sudo nft list ruleset
+
+Ver las reglas con su numero (handle), necesario para borrar una en especifico:
+    sudo nft --handle list ruleset
+
+Borrar todas las reglas de un golpe:
+    sudo nft flush ruleset
+
+Borrar una regla especifica usando su numero (handle):
+    sudo nft delete rule inet filter input handle 18
+
+Editar el archivo de configuracion:
+    sudo nano /etc/nftables.conf
+
+Aplicar un archivo de configuracion:
+    sudo nft -f /etc/nftables.conf
+
+
+----------------------------------------------------------------
+TABLAS Y CADENAS
+----------------------------------------------------------------
+
+Crear una tabla inet (IPv4 e IPv6):
+    sudo nft add table inet filter
+
+Crear una tabla solo para IPv4:
+    sudo nft add table ip filter
+
+Crear una tabla para NAT:
+    sudo nft add table ip nat
+
+Crear cadena INPUT sin politica (deja pasar todo por defecto):
+    sudo nft add chain inet filter input '{ type filter hook input priority 0; }'
+
+Crear cadena INPUT con politica DROP (bloquea todo por defecto):
+    sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }'
+
+Crear cadena OUTPUT:
+    sudo nft add chain inet filter output '{ type filter hook output priority 0; policy accept; }'
+
+Crear cadena FORWARD con politica DROP:
+    sudo nft add chain inet filter forward '{ type filter hook forward priority 0; policy drop; }'
+
+Cambiar la politica de una cadena que ya existe:
+    sudo nft chain inet filter input '{ policy drop; }'
+
+
+----------------------------------------------------------------
+REGLAS DE FIREWALL COMUNES
+----------------------------------------------------------------
+
+Permitir trafico interno del sistema (loopback):
+    sudo nft add rule inet filter input iif lo accept
+
+Permitir SSH (puerto 22):
+    sudo nft add rule inet filter input tcp dport 22 accept
+
+Permitir HTTP (puerto 80):
+    sudo nft add rule inet filter input tcp dport 80 accept
+
+Permitir HTTPS (puerto 443):
+    sudo nft add rule inet filter input tcp dport 443 accept
+
+Bloquear una IP especifica:
+    sudo nft add rule inet filter input ip saddr 192.168.1.100 drop
+
+Permitir ping:
+    sudo nft add rule inet filter input icmp type echo-request accept
+
+Bloquear ping:
+    sudo nft add rule inet filter input icmp type echo-request drop
+
+Limitar SSH a 5 intentos por minuto (anti ataques):
+    sudo nft add rule inet filter input tcp dport 22 limit rate 5/minute accept
+
+
+----------------------------------------------------------------
+CONNTRACK - SEGUIMIENTO DE CONEXIONES
+----------------------------------------------------------------
+
+Permitir trafico de conexiones que ya estaban abiertas:
+    sudo nft add rule inet filter input ct state established,related accept
+
+Tirar paquetes invalidos o mal formados:
+    sudo nft add rule inet filter input ct state invalid drop
+
+Permitir SSH solo para conexiones nuevas y activas:
+    sudo nft add rule inet filter input tcp dport 22 ct state new,established accept
+
+Permitir HTTP solo para conexiones nuevas:
+    sudo nft add rule inet filter input tcp dport 80 ct state new accept
+
+
+----------------------------------------------------------------
+CADENA OUTPUT
+----------------------------------------------------------------
+
+Bloquear trafico saliente hacia una IP:
+    sudo nft add rule inet filter output ip daddr 10.0.0.5 drop
+
+Permitir salida solo por puertos 80 y 443:
+    sudo nft add rule inet filter output tcp dport { 80, 443 } accept
+
+Permitir respuestas de conexiones activas en OUTPUT:
+    sudo nft add rule inet filter output ct state established,related accept
+
+
+----------------------------------------------------------------
+CADENA FORWARD (cuando el equipo actua de router)
+----------------------------------------------------------------
+
+Permitir conexiones activas que estan pasando por el equipo:
+    sudo nft add rule inet filter forward ct state established,related accept
+
+Permitir que la red interna salga a internet (eth1 adentro, eth0 afuera):
+    sudo nft add rule inet filter forward iif eth1 oif eth0 accept
+
+Bloquear conexiones nuevas de internet hacia la red interna:
+    sudo nft add rule inet filter forward iif eth0 oif eth1 ct state new drop
+
+
+----------------------------------------------------------------
+REJECT VS DROP
+----------------------------------------------------------------
+
+Drop silencioso (el cliente espera hasta que expira):
+    sudo nft add rule inet filter input tcp dport 23 drop
+
+Reject con mensaje ICMP (el cliente recibe el error de inmediato):
+    sudo nft add rule inet filter input tcp dport 23 reject with icmp type port-unreachable
+
+Reject con reset TCP (mas limpio para conexiones TCP):
+    sudo nft add rule inet filter input tcp dport 23 reject with tcp reset
+
+Reject para IPv6:
+    sudo nft add rule inet6 filter input tcp dport 23 reject with icmpv6 type port-unreachable
+
+
+----------------------------------------------------------------
+LOGGING - REGISTRAR PAQUETES
+----------------------------------------------------------------
+
+Registrar y bloquear trafico de una IP:
+    sudo nft add rule inet filter input ip saddr 10.0.0.5 log drop
+
+Registrar con texto identificador:
+    sudo nft add rule inet filter input tcp dport 22 log prefix "SSH-INTENTO: " level info accept
+
+Registrar todo lo que se bloquea al final de la cadena:
+    sudo nft add rule inet filter input log prefix "BLOQUEADO: " level warn drop
+
+Ver los logs generados:
+    sudo journalctl -k | grep "BLOQUEADO"
+    sudo dmesg | grep "BLOQUEADO"
+
+
+----------------------------------------------------------------
+VARIOS PUERTOS, RANGOS Y BLOQUES DE IPS
+----------------------------------------------------------------
+
+Permitir varios puertos en una sola regla:
+    sudo nft add rule inet filter input tcp dport { 22, 80, 443 } accept
+
+Bloquear varios puertos en una sola regla:
+    sudo nft add rule inet filter input tcp dport { 23, 135, 139, 445 } drop
+
+Permitir rango de puertos:
+    sudo nft add rule inet filter input tcp dport 8000-9000 accept
+
+Permitir toda una subred:
+    sudo nft add rule inet filter input ip saddr 192.168.1.0/24 accept
+
+Bloquear un bloque de IPs:
+    sudo nft add rule inet filter input ip saddr 10.0.0.0/8 drop
+
+Permitir SSH solo desde una red especifica:
+    sudo nft add rule inet filter input ip saddr 172.16.0.0/12 tcp dport 22 accept
+
+Solo una IP puede acceder a MySQL:
+    sudo nft add rule inet filter input ip saddr 192.168.1.50 tcp dport 3306 accept
+
+
+----------------------------------------------------------------
+SETS Y LISTA NEGRA DE IPS
+----------------------------------------------------------------
+
+Crear el set vacio:
+    sudo nft add set inet filter blacklist { type ipv4_addr \; }
+
+Agregar una IP al set:
+    sudo nft add element inet filter blacklist { 10.0.0.5 }
+
+Agregar varias IPs al mismo tiempo:
+    sudo nft add element inet filter blacklist { 10.0.0.5, 10.0.0.6, 10.0.0.7 }
+
+Crear regla que bloquea todo lo que este en el set:
+    sudo nft add rule inet filter input ip saddr @blacklist drop
+
+Ver que hay en el set:
+    sudo nft list set inet filter blacklist
+
+Sacar una IP del set:
+    sudo nft delete element inet filter blacklist { 10.0.0.5 }
+
+Crear set con soporte para rangos y CIDRs:
+    sudo nft add set inet filter redes_confiables { type ipv4_addr\; flags interval\; }
+
+Agregar CIDRs al set:
+    sudo nft add element inet filter redes_confiables { 192.168.0.0/24, 10.0.0.0/8 }
+
+Usar el set en una regla:
+    sudo nft add rule inet filter input ip saddr @redes_confiables accept
+
+
+----------------------------------------------------------------
+NAT - DNAT, SNAT Y MASQUERADE
+----------------------------------------------------------------
+
+Crear tabla NAT:
+    sudo nft add table ip nat
+
+Crear cadena PREROUTING para DNAT:
+    sudo nft add chain ip nat prerouting '{ type nat hook prerouting priority -100; }'
+
+Crear cadena POSTROUTING para SNAT y masquerade:
+    sudo nft add chain ip nat postrouting '{ type nat hook postrouting priority 100; }'
+
+DNAT - Redirigir puerto 80 al servidor interno:
+    sudo nft add rule ip nat prerouting tcp dport 80 dnat to 192.168.1.10
+
+DNAT - Redirigir con cambio de puerto (80 externo a 8080 interno):
+    sudo nft add rule ip nat prerouting tcp dport 80 dnat to 192.168.1.10:8080
+
+DNAT - Solo para trafico que entra por eth0:
+    sudo nft add rule ip nat prerouting iif eth0 tcp dport 443 dnat to 192.168.1.20:443
+
+SNAT - Cambiar IP de origen a una IP fija:
+    sudo nft add rule ip nat postrouting oif eth0 snat to 203.0.113.5
+
+SNAT - Solo para una red interna especifica:
+    sudo nft add rule ip nat postrouting ip saddr 192.168.1.0/24 oif eth0 snat to 203.0.113.5
+
+Masquerade - Usar la IP actual de la interfaz (para IPs dinamicas):
+    sudo nft add rule ip nat postrouting oif eth0 masquerade
+
+Masquerade - Solo para una subred:
+    sudo nft add rule ip nat postrouting ip saddr 192.168.0.0/24 oif eth0 masquerade
+
+Activar IP forwarding ahora mismo:
+    sudo sysctl -w net.ipv4.ip_forward=1
+
+Activar IP forwarding de forma permanente:
+    echo "net.ipv4.ip_forward = 1" | sudo tee -a /etc/sysctl.conf
+    sudo sysctl -p
+
+
+----------------------------------------------------------------
+IPV6
+----------------------------------------------------------------
+
+Crear tabla solo para IPv6:
+    sudo nft add table ip6 filter
+
+Cadena INPUT para IPv6 con DROP:
+    sudo nft add chain ip6 filter input '{ type filter hook input priority 0; policy drop; }'
+
+Permitir loopback en IPv6:
+    sudo nft add rule ip6 filter input iif lo accept
+
+Permitir ICMPv6 necesario para que IPv6 funcione:
+    sudo nft add rule ip6 filter input icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept
+
+Permitir todo ICMPv6:
+    sudo nft add rule ip6 filter input icmpv6 accept
+
+Bloquear una IP IPv6 especifica:
+    sudo nft add rule ip6 filter input ip6 saddr 2001:db8::1 drop
+
+Permitir subred IPv6:
+    sudo nft add rule ip6 filter input ip6 saddr 2001:db8::/32 accept
+
+Permitir ICMPv6 dentro de tabla inet:
+    sudo nft add rule inet filter input meta l4proto ipv6-icmp accept
+
+
+----------------------------------------------------------------
+CONTADORES Y MONITOREO
+----------------------------------------------------------------
+
+Agregar contador a una regla:
+    sudo nft add rule inet filter input tcp dport 80 counter accept
+
+Crear contador con nombre:
+    sudo nft add counter inet filter trafico_http
+
+Usar contador con nombre en una regla:
+    sudo nft add rule inet filter input tcp dport 80 counter name trafico_http accept
+
+Ver todos los contadores:
+    sudo nft list counters
+
+Ver un contador especifico:
+    sudo nft list counter inet filter trafico_http
+
+Ver cambios en tiempo real:
+    sudo nft monitor
+
+Ver solo cambios en reglas:
+    sudo nft monitor rules
+
+Limitar por cantidad de datos transferidos:
+    sudo nft add rule inet filter input ip saddr 10.0.0.5 quota over 1 gbytes drop
+
+
+----------------------------------------------------------------
+GUARDAR CONFIGURACION
+----------------------------------------------------------------
+
+Guardar todas las reglas activas al archivo:
+    sudo nft list ruleset > /etc/nftables.conf
+
+Aplicar reglas desde el archivo:
+    sudo nft -f /etc/nftables.conf
+
+Habilitar el servicio para que cargue las reglas al arrancar:
+    sudo systemctl enable nftables
+
+
+----------------------------------------------------------------
+CONFIGURACION MINIMA - SERVIDOR WEB
+----------------------------------------------------------------
+
+Estos son los comandos en orden para dejar un servidor basico funcionando:
+
+    sudo nft flush ruleset
+    sudo nft add table inet filter
+    sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }'
+    sudo nft add rule inet filter input iif lo accept
+    sudo nft add rule inet filter input ct state established,related accept
+    sudo nft add rule inet filter input ct state invalid drop
+    sudo nft add rule inet filter input tcp dport 22 limit rate 5/minute accept
+    sudo nft add rule inet filter input tcp dport { 80, 443 } accept
+    sudo nft add rule inet filter input icmp type echo-request accept
+    sudo nft list ruleset > /etc/nftables.conf
+    sudo systemctl enable nftables
+
+
+----------------------------------------------------------------
+DIAGNOSTICO - CUANDO ALGO NO FUNCIONA
+----------------------------------------------------------------
+
+Ver que reglas estan activas ahora mismo:
+    sudo nft list ruleset
+
+Ver en tiempo real que paquetes estan siendo procesados:
+    sudo nft monitor
+
+Buscar en los logs lo que fue bloqueado:
+    sudo journalctl -k | grep "INPUT-DROP"
+
+Probar que SSH responde:
+    ssh -v usuario@ip_del_servidor
+
+Probar que el servidor web responde:
+    curl -I http://ip_del_servidor
+
+================================================================
