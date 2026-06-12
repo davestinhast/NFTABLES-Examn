@@ -3,7 +3,6 @@
 Esta guia tiene todos los comandos de nftables organizados por tema.
 Cada archivo explica que hace cada comando y para que sirve.
 
----
 
 ## Indice
 
@@ -36,7 +35,6 @@ Cada archivo explica que hace cada comando y para que sirve.
 14. [Guardar la configuracion](./comandos/06-persistencia.md)
 15. [Ejemplo de configuracion completa](./comandos/15-ruleset-completo-ejemplo.md)
 
----
 
 ## Comandos que hay que saber si o si
 
@@ -63,7 +61,6 @@ sudo nft -f /etc/nftables.conf
 sudo nft monitor
 ```
 
----
 
 ## Como armar un firewall basico paso a paso
 
@@ -103,7 +100,6 @@ sudo nft list ruleset > /etc/nftables.conf
 sudo systemctl enable nftables
 ```
 
----
 
 ## Tabla resumen - lo que cae en examenes
 
@@ -121,7 +117,6 @@ sudo systemctl enable nftables
 | Registrar paquetes | `log prefix "TAG: " level warn` |
 | Ver numeros de regla | `nft --handle list ruleset` |
 
----
 
 ## Familias de direccion
 
@@ -133,7 +128,6 @@ sudo systemctl enable nftables
 | `arp` | Paquetes ARP |
 | `bridge` | Trafico que pasa por un bridge |
 
----
 
 ## Hooks y en que momento se ejecutan
 
